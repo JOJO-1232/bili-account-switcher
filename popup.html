@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="color-scheme" content="light dark">
+  <title>B站账号切换</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="bg" aria-hidden="true">
+    <span class="blob b1"></span>
+    <span class="blob b2"></span>
+    <span class="blob b3"></span>
+    <span class="blob b4"></span>
+    <span class="grain"></span>
+  </div>
+
+  <div class="wrap">
+    <section id="pendingBar" class="pending-bar" hidden></section>
+
+    <section id="currentBar" class="current-bar">
+      <div class="sk-line"></div>
+    </section>
+
+    <section class="toolbar">
+      <button id="btnSave" class="btn btn-primary">保存当前登录</button>
+      <button id="btnAdd" class="btn btn-ghost">登录新账号</button>
+      <button id="btnRefresh" class="icon-btn" title="刷新">&#8635;</button>
+    </section>
+
+    <section id="list" class="list"></section>
+
+    <p class="foot">凭证只存在本机 · 切换后原 B站 标签页原地刷新</p>
+  </div>
+
+  <div id="confirmMask" class="confirm-mask" hidden>
+    <div class="confirm-box">
+      <p id="confirmText" class="confirm-text"></p>
+      <div class="confirm-actions">
+        <button id="confirmCancel" class="btn btn-ghost">取消</button>
+        <button id="confirmOk" class="btn btn-primary">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="accounts.js"></script>
+</body>
+</html>

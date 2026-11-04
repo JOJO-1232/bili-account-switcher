@@ -1,0 +1,756 @@
+/* B站账号切换器 - 弹出面板（液态玻璃 / Liquid Glass）
+ *
+ * 说明：扩展弹窗是浏览器给的独立画布，无法真正透出后面的网页。
+ * 因此这里自带一层「会缓慢流动的彩色光斑」作为玻璃的折射源：
+ * 面板用 backdrop-filter 模糊它，才会出现真实的材质感，而不是单纯的半透明。
+ */
+
+:root {
+  --pink: #fb7299;
+  --pink-deep: #ef5f8b;
+  --pink-soft: rgba(251, 114, 153, 0.18);
+  --pink-glass: rgba(251, 114, 153, 0.16);
+
+  --ink: #101216;
+  --ink-2: rgba(16, 18, 22, 0.6);
+  --ink-3: rgba(16, 18, 22, 0.45);
+
+  --bg: #f4f6fb;
+
+  --glass: rgba(255, 255, 255, 0.7);
+  --glass-strong: rgba(255, 255, 255, 0.84);
+  --sheen-a: rgba(255, 255, 255, 0.5);
+  --sheen-b: rgba(255, 255, 255, 0.04);
+  --edge: rgba(255, 255, 255, 0.95);
+  --edge-soft: rgba(255, 255, 255, 0.45);
+  --glass-hi: rgba(255, 255, 255, 1);
+
+  --shadow: 0 10px 26px rgba(38, 48, 66, 0.13);
+  --shadow-sm: 0 4px 14px rgba(38, 48, 66, 0.1);
+
+  /* 账号行专用玻璃：比面板更淡一点，鼠标移上去只提亮不加深 */
+  --row-glass: rgba(255, 255, 255, 0.56);
+  --row-hover: rgba(255, 255, 255, 0.8);
+  --row-shadow: 0 4px 16px rgba(38, 48, 66, 0.09);
+
+  --cloud-opacity: 0.32;
+  /* 直角：弹窗窗口本身是方形，内部卡片跟着窗口走，不再做圆角 */
+  --radius: 0px;
+  --radius-sm: 0px;
+
+  /* 玻璃对背后色彩的处理：模糊 + 提饱和 + 轻微提亮 */
+  --frost: blur(12px) saturate(155%) brightness(1.02);
+
+  /* 背景色雾（铺满整块画布，保证每块玻璃下面都有颜色可折射） */
+  --m1: rgba(255, 150, 190, 0.32);
+  --m2: rgba(120, 190, 255, 0.28);
+  --m3: rgba(170, 150, 255, 0.3);
+  --m4: rgba(120, 225, 210, 0.22);
+
+  --b1: radial-gradient(circle at 34% 32%, #ffc6d9, #ff9ec0 58%, #ff86ab);
+  --b2: radial-gradient(circle at 38% 38%, #c2e9ff, #93d3ff 58%, #79c2f7);
+  --b3: radial-gradient(circle at 44% 44%, #ddd6ff, #bdaaff 58%, #a894f5);
+  --b4: radial-gradient(circle at 42% 42%, #d3fff7, #a3efe2 58%, #8ce4d5);
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pink: #ff86a8;
+    --pink-deep: #f26d95;
+    --pink-soft: rgba(255, 134, 168, 0.18);
+    --pink-glass: rgba(74, 30, 46, 0.62);
+
+    --ink: #f2f4f8;
+    --ink-2: rgba(242, 244, 248, 0.62);
+    --ink-3: rgba(242, 244, 248, 0.4);
+
+    --bg: #0a0c10;
+
+    --glass: rgba(20, 22, 28, 0.58);
+    --glass-strong: rgba(22, 24, 30, 0.76);
+    --sheen-a: rgba(255, 255, 255, 0.1);
+    --sheen-b: rgba(255, 255, 255, 0.015);
+    --edge: rgba(255, 255, 255, 0.15);
+    --edge-soft: rgba(255, 255, 255, 0.06);
+    --glass-hi: rgba(255, 255, 255, 0.2);
+
+    --shadow: 0 12px 28px rgba(0, 0, 0, 0.46);
+    --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.32);
+
+    /* 深色下账号行比面板更透，靠微弱提亮区分层次 */
+    --row-glass: rgba(28, 31, 38, 0.42);
+    --row-hover: rgba(46, 50, 60, 0.52);
+    --row-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+
+    --cloud-opacity: 0.28;
+    --frost: blur(12px) saturate(138%) brightness(0.82);
+
+    --m1: rgba(240, 66, 122, 0.18);
+    --m2: rgba(40, 120, 220, 0.16);
+    --m3: rgba(104, 78, 226, 0.18);
+    --m4: rgba(26, 150, 132, 0.12);
+
+    --b1: radial-gradient(circle at 34% 32%, #ff7fa6, #ef4a7d 58%, #c9335f);
+    --b2: radial-gradient(circle at 38% 38%, #59b2ff, #2478cc 58%, #14559b);
+    --b3: radial-gradient(circle at 44% 44%, #9a82ff, #6247d6 58%, #442f9e);
+    --b4: radial-gradient(circle at 42% 42%, #54dcc8, #1aa895 58%, #0d7a6c);
+
+    color-scheme: dark;
+  }
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+/* 关于「圆角」：弹窗（default_popup）的窗口形状与窗口底色完全由浏览器决定，
+ * CSS 只能让内容自己变圆角。试过把 html/body 设成透明、由一层外壳画圆角，
+ * 真机上窗口四周会立刻露出黑色底——因为弹窗窗口比内容盒更大，多出来的那块不归我们管。
+ * 所以这里不做假圆角：面板满铺，内部卡片也一律直角，与方形窗口对齐。 */
+body {
+  width: 360px;
+  position: relative;
+  overflow-x: hidden;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(62% 44% at 10% 6%, var(--m1), transparent 70%),
+    radial-gradient(58% 40% at 94% 24%, var(--m2), transparent 70%),
+    radial-gradient(66% 48% at 22% 72%, var(--m3), transparent 72%),
+    radial-gradient(48% 36% at 94% 94%, var(--m4), transparent 70%);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- 背景：流动光斑 + 细颗粒 ---------- */
+/* fixed 让光斑在内容滚动时保持不动；它不参与布局，也不会撑大窗口尺寸 */
+.bg {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.bg .blob {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  filter: blur(40px);
+  opacity: var(--cloud-opacity);
+  will-change: transform;
+}
+
+.b1 {
+  width: 300px;
+  height: 300px;
+  left: -96px;
+  top: -104px;
+  background: var(--b1);
+  animation: drift1 17s ease-in-out infinite alternate;
+}
+
+.b2 {
+  width: 280px;
+  height: 280px;
+  right: -108px;
+  top: 24px;
+  background: var(--b2);
+  animation: drift2 21s ease-in-out infinite alternate;
+}
+
+.b3 {
+  width: 320px;
+  height: 320px;
+  left: -30px;
+  bottom: -140px;
+  background: var(--b3);
+  animation: drift3 25s ease-in-out infinite alternate;
+}
+
+.b4 {
+  width: 210px;
+  height: 210px;
+  right: -70px;
+  bottom: 30px;
+  background: var(--b4);
+  animation: drift2 19s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes drift1 {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(30px, 24px, 0) scale(1.16); }
+}
+
+@keyframes drift2 {
+  from { transform: translate3d(0, 0, 0) scale(1.06); }
+  to { transform: translate3d(-26px, 30px, 0) scale(0.94); }
+}
+
+@keyframes drift3 {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-22px, -26px, 0) scale(1.12); }
+}
+
+/* 极细的噪点，让玻璃不那么"塑料" */
+.grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg .blob { animation: none; }
+}
+
+/* ---------- 玻璃面板通用材质 ---------- */
+/* 「当前登录」栏、提示条等共用同一套框；账号行不复用这里（它不画边线，见下方 .card） */
+.current-bar,
+.pending-bar,
+.empty,
+.confirm-box {
+  position: relative;
+  border-radius: var(--radius);
+  border: 1px solid var(--edge);
+  background:
+    linear-gradient(157deg, var(--sheen-a) 0%, var(--sheen-b) 38%, rgba(255, 255, 255, 0) 72%),
+    var(--glass);
+  -webkit-backdrop-filter: var(--frost);
+  backdrop-filter: var(--frost);
+  box-shadow:
+    0 1px 0 0 var(--glass-hi) inset,
+    0 -1px 0 0 var(--edge-soft) inset,
+    var(--shadow);
+}
+
+/* 鼠标处的高光，玻璃才有"会晃"的液体感 */
+.card::after,
+.current-bar::after,
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(
+    72px 72px at var(--gx, 50%) var(--gy, 0%),
+    rgba(255, 255, 255, 0.55),
+    rgba(255, 255, 255, 0) 70%
+  );
+  mix-blend-mode: soft-light;
+  opacity: 0;
+  transition: opacity 0.24s ease;
+}
+
+.card:hover::after,
+.current-bar:hover::after,
+.btn:hover::after { opacity: 1; }
+
+/* ---------- 头部 ---------- */
+.wrap {
+  position: relative;
+  z-index: 1;
+  padding: 12px 12px 10px;
+}
+
+.icon-btn {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--edge);
+  background:
+    linear-gradient(160deg, var(--sheen-a), rgba(255, 255, 255, 0) 70%),
+    var(--glass);
+  -webkit-backdrop-filter: var(--frost);
+  backdrop-filter: var(--frost);
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 1px 0 var(--glass-hi) inset, var(--shadow-sm);
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.icon-btn:hover {
+  color: var(--pink-deep);
+  transform: rotate(-40deg);
+}
+
+/* ---------- 添加账号进行中 ---------- */
+.pending-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  background:
+    linear-gradient(157deg, var(--sheen-a), rgba(255, 255, 255, 0) 70%),
+    var(--pink-glass);
+  border-color: rgba(251, 114, 153, 0.45);
+}
+
+.pending-bar[hidden] { display: none; }
+
+.pending-bar .p-icon {
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 50%;
+  border: 2px solid rgba(251, 114, 153, 0.3);
+  border-top-color: var(--pink);
+  flex: 0 0 auto;
+  animation: p-spin 0.9s linear infinite;
+}
+
+@keyframes p-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pending-bar .p-body {
+  flex: 1 1 190px;
+  min-width: 0;
+}
+
+.pending-bar .p-title {
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.pending-bar .p-desc {
+  margin-top: 1px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.pending-bar .p-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.pending-bar .p-actions .btn {
+  padding: 3px 9px;
+  font-size: 11.5px;
+}
+
+/* ---------- 当前账号 ---------- */
+.current-bar {
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+  min-height: 70px;
+}
+
+.current-bar .label {
+  font-size: 11px;
+  color: var(--ink-3);
+  flex: 0 0 auto;
+}
+
+.current-bar .who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.current-bar .cur-info {
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+}
+
+.current-bar .name {
+  font-weight: 600;
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.current-bar .cur-uid {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  object-fit: cover;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px var(--edge-soft), var(--shadow-sm);
+}
+
+.current-bar .avatar {
+  width: 38px;
+  height: 38px;
+}
+
+/* 当前栏高度收到 70px 后，右侧状态标签同步收小，避免顶满 */
+.current-bar .tag {
+  font-size: 10.5px;
+  padding: 2px 9px;
+}
+
+.tag {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+  border: 1px solid rgba(251, 114, 153, 0.28);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.tag.gray {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: var(--edge-soft);
+  color: var(--ink-2);
+}
+
+.sk-line {
+  height: 12px;
+  width: 150px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.22) 25%,
+    rgba(255, 255, 255, 0.5) 37%,
+    rgba(255, 255, 255, 0.22) 63%
+  );
+  background-size: 400% 100%;
+  animation: shimmer 1.3s ease infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* ---------- 工具栏 ---------- */
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+/* 刷新键并入工具行，靠右对齐，替代原先 header 里的位置 */
+.toolbar .icon-btn {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.btn {
+  position: relative;
+  overflow: hidden;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.14s ease, box-shadow 0.14s ease;
+}
+
+/* 悬停提亮用独立覆盖层实现，只给实心主按钮用。
+   这里绝对不能用 filter:brightness()：filter 会让祖先形成独立渲染层，
+   导致下方玻璃面板的 backdrop-filter 采样被截断，卡片会整体变暗。 */
+.btn-primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.06));
+  opacity: 0;
+  transition: opacity 0.14s ease;
+}
+
+.btn-primary:hover::before { opacity: 1; }
+
+.btn:active { transform: scale(0.97); }
+
+.btn-primary {
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  color: #fff;
+  background: linear-gradient(180deg, #ff9cbc 0%, #f2638f 55%, #ea5484 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 -4px 10px rgba(168, 48, 84, 0.35) inset,
+    0 6px 16px rgba(240, 99, 143, 0.34);
+}
+
+/* 悬停不提亮变暗，也不加 filter：由 .btn-primary::before 的覆盖层负责提亮 */
+.btn-primary:hover {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 -4px 10px rgba(168, 48, 84, 0.35) inset,
+    0 8px 20px rgba(240, 99, 143, 0.45);
+}
+
+.btn-ghost {
+  border: 1px solid var(--edge);
+  color: var(--ink);
+  background:
+    linear-gradient(157deg, var(--sheen-a), rgba(255, 255, 255, 0) 72%),
+    var(--glass);
+  -webkit-backdrop-filter: var(--frost);
+  backdrop-filter: var(--frost);
+  box-shadow: 0 1px 0 var(--glass-hi) inset, var(--shadow-sm);
+}
+
+.btn-ghost:hover { border-color: rgba(251, 114, 153, 0.6); }
+
+.btn-text {
+  border: none;
+  background: transparent;
+  color: var(--ink-2);
+  padding: 7px 6px;
+  box-shadow: none;
+}
+
+.btn-text:hover { color: var(--pink-deep); }
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---------- 账号列表 ---------- */
+.list {
+  display: flex;
+  flex-direction: column;
+  /* 直角卡片之间留出间距，否则相邻两行会连成一整块 */
+  gap: 14px;
+  max-height: 340px;
+  overflow-y: auto;
+  /* 列表本身不带任何底/边框，避免多出一层框 */
+  background: none;
+  border: 0;
+  padding: 2px 0 4px;
+}
+
+.list::-webkit-scrollbar { width: 6px; }
+.list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 3px;
+}
+
+/* 账号行：直角，与弹窗窗口对齐。
+ * 靠 1px 描边 + 半透明玻璃底把每行框住，边界清楚才看得出是"一行账号"。 */
+.card {
+  position: relative;
+  border-radius: var(--radius);
+  border: 1px solid var(--edge);
+  background:
+    linear-gradient(157deg, var(--sheen-a) 0%, var(--sheen-b) 40%, rgba(255, 255, 255, 0) 76%),
+    var(--row-glass);
+  -webkit-backdrop-filter: var(--frost);
+  backdrop-filter: var(--frost);
+  box-shadow: var(--row-shadow);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  cursor: pointer;
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* 悬停只把玻璃底提亮一档，不加描边、不加光环，避免又"框"起来 */
+.card:hover {
+  background:
+    linear-gradient(157deg, var(--sheen-a) 0%, var(--sheen-b) 40%, rgba(255, 255, 255, 0) 76%),
+    var(--row-hover);
+  box-shadow: var(--row-shadow);
+}
+
+/* 当前账号：靠右侧「当前」标签标识，不给它单独的边或底色 */
+.card.is-current {
+  cursor: default;
+}
+
+.card.is-current:hover {
+  background:
+    linear-gradient(157deg, var(--sheen-a) 0%, var(--sheen-b) 40%, rgba(255, 255, 255, 0) 76%),
+    var(--row-glass);
+}
+
+.card.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.card .meta {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.card .uname {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card .uid {
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.card .del {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.card:hover .del { opacity: 1; }
+
+.card .del:hover {
+  color: #ff5a5f;
+  background: rgba(255, 90, 95, 0.16);
+}
+
+/* ---------- 空态 ---------- */
+.empty {
+  padding: 22px 14px;
+  text-align: center;
+  color: var(--ink-2);
+  font-size: 11.5px;
+  border-style: dashed;
+}
+
+.empty strong {
+  display: block;
+  color: var(--ink);
+  font-size: 12.5px;
+  margin-bottom: 3px;
+}
+
+/* ---------- 底部 ---------- */
+.foot {
+  margin: 10px 0 0;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  text-align: center;
+}
+
+/* ---------- 页内确认框 ---------- */
+.confirm-mask {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 30;
+  background: rgba(8, 10, 14, 0.42);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.confirm-mask[hidden] { display: none; }
+
+.confirm-box {
+  width: 100%;
+  max-width: 320px;
+  padding: 15px;
+  border-radius: var(--radius);
+  background:
+    linear-gradient(157deg, var(--sheen-a), rgba(255, 255, 255, 0) 72%),
+    var(--glass-strong);
+  box-shadow:
+    0 1px 0 var(--glass-hi) inset,
+    0 -1px 0 var(--edge-soft) inset,
+    0 18px 40px rgba(0, 0, 0, 0.34);
+}
+
+.confirm-text {
+  margin: 0 0 13px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---------- 提示 ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  transform: translate(-50%, 12px);
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(20, 22, 27, 0.72);
+  -webkit-backdrop-filter: blur(9px) saturate(150%);
+  backdrop-filter: blur(9px) saturate(150%);
+  color: #fff;
+  font-size: 12px;
+  max-width: 330px;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+  z-index: 40;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.toast.error {
+  background: rgba(198, 44, 52, 0.82);
+  border-color: rgba(255, 140, 140, 0.35);
+}
